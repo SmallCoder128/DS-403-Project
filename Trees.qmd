@@ -1,0 +1,71 @@
+---
+title: "Trees"
+format: html
+---
+
+```{r}
+library(ggplot2)
+library(here)
+library(dplyr)
+library(quanteda)
+library(Matrix)
+library(ggraph)
+library(igraph)
+```
+
+Data Load:
+
+```{r}
+hobbit <- read.csv(here("Hobbit_Clean.csv"))
+txt <- hobbit$text
+```
+
+```{r}
+toks <- tokens(txt, remove_punct = TRUE, remove_numbers = TRUE) |>
+  tokens_tolower() |>
+  tokens_remove(stopwords("en"))
+
+# Keep only frequent words so the matrix stays manageable
+dfmat <- dfm(toks) |> dfm_trim(min_termfreq = 20)
+top   <- names(topfeatures(dfmat, 200))
+
+# Co-occurrence within a sliding window
+fcmat <- fcm(toks, context = "window", window = 5, tri = FALSE)
+fcmat <- fcmat[top, top]
+
+# PPMI weighting (much better than raw counts)
+m   <- as(fcmat, "dgCMatrix")
+tot <- sum(m); rs <- rowSums(m); cs <- colSums(m)
+pmi <- log((m * tot) / outer(rs, cs))
+pmi[!is.finite(pmi) | pmi < 0] <- 0
+
+# Cosine distance -> hierarchical clustering
+sim <- as.matrix(pmi); sim <- sim / sqrt(rowSums(sim^2) + 1e-9)
+d   <- as.dist(1 - sim %*% t(sim))
+hc  <- hclust(d, method = "ward.D2")
+```
+
+```{r}
+# Plot as a circular dendrogram
+dend <- as.dendrogram(hc)
+
+p <- ggraph(dend, layout = "dendrogram", circular = TRUE) +
+  geom_edge_diagonal(alpha = 0.4)
+
+# Leaf positions -> rotation angle for each label
+lab <- subset(p$data, leaf)
+lab$angle <- atan2(lab$y, lab$x) * 180 / pi
+flip      <- lab$angle > 90 | lab$angle < -90
+lab$angle <- ifelse(flip, lab$angle + 180, lab$angle)
+lab$hjust <- ifelse(flip, 1, 0)
+
+lim <- max(sqrt(lab$x^2 + lab$y^2)) * 1.4   # room for the labels
+
+p +
+  geom_text(data = lab,
+            aes(x = x * 1.03, y = y * 1.03, label = label,
+                angle = angle, hjust = hjust),
+            size = 2.0) +
+  coord_fixed(xlim = c(-lim, lim), ylim = c(-lim, lim)) +
+  theme_void()
+```

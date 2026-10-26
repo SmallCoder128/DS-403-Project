@@ -1,0 +1,224 @@
+---
+title: "Text_mining_rylan"
+format: html
+editor: visual
+---
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(igraph)
+library(tm)
+library(SnowballC)
+library(wordcloud)
+library(RColorBrewer)
+library(lubridate)
+library(NLP)
+library("stringi")
+library(syuzhet)
+library(tidyverse)
+library(tidytext)
+library(tidyr)
+library(scales)
+library(readr)
+library(stringr)
+library(stringi)
+library(ggplot2)
+library(igraph)
+library(ggraph)
+library(topicmodels)
+library(reshape2)
+library(ggthemes)
+library(FactoMineR)
+library(factoextra)
+library(ggrepel)
+library(ape)
+library(tsne)
+library(Rtsne)
+library(fpc)
+library(wordcloud2)
+library(slam)
+library(Rmpfr)
+library(rgl)
+library(cluster)
+library(widyr)
+```
+
+```{r}
+###############################
+# Wordcloud colors
+###############################
+pal = brewer.pal(8, "Dark2")
+practice_wordcloud1 <- Corpus(VectorSource(dataset$column_name))
+practice_wordcloud1
+wordcloud(practice_wordcloud1, max.words = 500, random.order = FALSE, colors=pal)
+
+##Adding cleaning conditions to wordcloud dataset
+practice_wordcloud1 <- tm_map(practice_wordcloud1, removePunctuation)
+practice_wordcloud2 <- tm_map(practice_wordcloud1, tolower)
+practice_wordcloud3 <- tm_map(practice_wordcloud2, stripWhitespace)
+practice_wordcloud4 <- tm_map(practice_wordcloud3, removeWords, c(stopwords('english')))
+wordcloud(practice_wordcloud4, max.words=500, random.order=FALSE, colors=pal)
+
+###############################
+# Tidytext - Clean data
+###############################
+data_df <- data.frame(text=dataset$column_name)
+data_df$text <- as.character(data_df$text)
+#Encoding(data_df$text) <- "latin1" #//gsub error fix
+data_df$text2 <- gsub('http\\S+\\s*', '', data_df$text)
+data_df$text <- gsub('\\b+RT', '', data_df$text)
+data_df$text <- gsub('#\\S+', '', data_df$text)
+data_df$text <- gsub('@\\S+', '', data_df$text)
+data_df$text <- gsub('[[:cntrl:]]', '', data_df$text)
+data_df$text <- gsub('\\d', '', data_df$text)
+tryToLower <- function(x){
+  y=NA
+  try_error=tryCatch(tolower(x), error=function(e)e)
+  if(!inherits(try_error, 'error'))
+    y=tolower(x)
+  return(y)
+}
+custom_stopwords <- c(stopwords('english'))
+clean_corpus <- function(corpus){
+  corpus <- tm_map(corpus, content_transformer(tryToLower))
+  corpus <- tm_map(corpus, removeWords, custom_stopwords)
+  corpus <- tm_map(corpus, removePunctuation)
+  corpus <- tm_map(corpus, stripWhitespace)
+  return(corpus)
+}
+corpus <-Corpus(VectorSource(data_df$text))
+corpus <- clean_corpus(corpus)
+tdm <- TermDocumentMatrix(corpus)
+tdm
+m <- as.matrix(tdm)
+m
+###############################
+# Tidytext - Create data set tweets_td
+###############################
+
+dtm <- DocumentTermMatrix(corpus)
+str(dtm)
+word_freq <- tidy(dtm)
+word_freq
+
+###############################
+# Tidytext - Word frequency
+###############################
+word_freq %>%
+  count(term, sort=T)%>%
+  filter(n>=30)%>%
+  mutate(word=reorder(term,n))%>%
+  ggplot(aes(word, n))+
+  geom_col(fill="yellow", col="black")+
+  xlab(NULL)+
+  coord_flip()+
+  ggtitle("Word frequency >= 30")+
+  theme(plot.title=element_text(size=10, face="bold"))+
+  theme_bw()
+
+###############################
+# Sentiment analysis - Not Tidytext
+###############################
+sentiment_analysis_data<- as.character(dataset$column_name)
+sentiment_analysis_data
+nrc_lexicon <- get_sentiments("nrc")
+nrc_lexicon
+s_analysis<- get_nrc_sentiment(sentiment_analysis_data)
+s_analysis
+data_sentiment_score <- data.frame(colSums(s_analysis[,]))
+data_sentiment_score
+names(data_sentiment_score) <- "Score"
+names(data_sentiment_score)
+data_sentiment_score <- cbind("sentiment"=rownames(data_sentiment_score),
+                              
+                              data_sentiment_score)
+rownames(data_sentiment_score) <- NULL
+ggplot(data=data_sentiment_score, aes(x=sentiment, y=Score))+
+  geom_bar(aes(fill=sentiment), stat="identity") +
+  theme(legend.position="none")+
+  xlab("Sentiments")+
+  ylab("Scores")+
+  ggtitle("Title of Sentiment Analysis")
+##Remove the positive and negative sentiment results
+data_sentiment_score[,]
+
+data_sentiment_score2 <- data_sentiment_score[1:8,]
+ggplot(data=data_sentiment_score2, aes(x=sentiment, y=Score))+
+  geom_bar(aes(fill=sentiment), stat="identity") +
+  theme(legend.position="none")+
+  xlab("Sentiments")+
+  ylab("Scores")+
+  ggtitle("Title of Sentiment Analysis")
+###############################
+# Tidytext - Sentiment words per emotion
+###############################
+nrc_sentiments <- word_freq%>%
+  inner_join(get_sentiments("nrc"), by=c(term="word"))%>%
+  count(term, sentiment)%>%
+  group_by(sentiment)%>%
+  slice_max(term, n=10)%>%
+  arrange(desc(n))%>%
+  ungroup()%>%
+  #top_n(10)%>%
+  mutate(term=reorder(term, n))%>%
+  ggplot(aes(term, y=n, fill=sentiment))+
+  geom_col(show.legend = FALSE)+
+  facet_wrap(~sentiment, scales="free")+
+  labs(x=NULL, y= "NRC Sentiments and Associated          Words")+
+coord_flip()
+nrc_sentiments
+###############################
+# Tidytext - Wordcloud
+###############################
+wordcloud_words <- word_freq%>%
+count(term, sort = T)%>%
+filter(n>=4)
+wordcloud_words
+wordcloud2(data=wordcloud_words, size=2)
+```
+
+convert to csv
+
+```{r}
+hobbit <- read_delim("data/hobbit.txt", delim = "\t")
+
+write_csv(hobbit, "hobbit.csv")
+```
+
+```{r}
+library(xml2)
+
+lines <- readLines("data/hobbit.txt", warn = FALSE)
+
+txt <- xml_text(read_html(paste(lines, collapse = "\n")))
+
+text_lines <- strsplit(txt, "\n")[[1]]
+text_lines <- trimws(text_lines)
+text_lines <- text_lines[text_lines != ""]
+
+dfh <- data.frame(line = seq_along(text_lines), text = text_lines)
+write.csv(dfh, "Hobbit_Clean.csv", row.names = FALSE)
+```
+
+```{r}
+Hobbit <- read_csv("Hobbit_Clean.csv")
+```
+
+```{r, warning=FALSE}
+pal = brewer.pal(8, "Dark2")
+practice_wordcloud1 <- Corpus(VectorSource(Hobbit$text))
+practice_wordcloud1
+wordcloud(practice_wordcloud1, max.words = 500, random.order = FALSE, colors=pal)
+
+##Adding cleaning conditions to wordcloud dataset
+practice_wordcloud1 <- tm_map(practice_wordcloud1, removePunctuation)
+practice_wordcloud2 <- tm_map(practice_wordcloud1, tolower)
+practice_wordcloud3 <- tm_map(practice_wordcloud2, stripWhitespace)
+practice_wordcloud4 <- tm_map(practice_wordcloud3, removeWords, c(stopwords('english')))
+wordcloud(practice_wordcloud4, max.words=500, random.order=FALSE, colors=pal)
+```
+
+```{r}
+Trees_count <- sum(str_count(text, "\\btree\\b"))
+```
